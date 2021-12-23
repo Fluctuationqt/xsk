@@ -15,6 +15,7 @@ const bytes = require("io/v4/bytes");
 const database = require("db/v4/database");
 const config = require("core/v4/configurations");
 const HANA_USERNAME = "HANA_USERNAME";
+const XSKHDBCoreFacade = Java.type("com.sap.xsk.hdb.ds.facade.XSKHDBCoreFacade");
 
 class MigrationService {
 
@@ -58,7 +59,7 @@ class MigrationService {
         workspace = workspaceManager.getWorkspace(workspaceName);
 
         const deployables = [];
-
+        const facade = new XSKHDBCoreFacade();
         for (let i = 0; i < lists.length; i++) {
             const file = lists[i];
             // each file's package id is based on its directory
@@ -70,6 +71,20 @@ class MigrationService {
                 workspace.createProject(projectName)
                 project = workspace.getProject(projectName)
             }
+
+            // Call parsers for each file
+            const fileName = file._name + "." + file._suffix;
+            const filePath = file._packageName.replaceAll('.', "/") + "/" + fileName;
+            const fileContent = String.fromCharCode.apply(String, file._content).replace(/\0/g,'');
+            const parsedData = facade.parseDataStructureModel(fileName, filePath, fileContent);
+            this.handleParsedData(parsedData, project);
+
+//            // TODO: REMOVE THIS BLOCK!!!! ONLY FOR DEBUG!!! Call parsers for a hardcoded sample hdbtable file
+//            const sampleName = "SamplePostgreXSClassicTable.hdbtable";
+//            const samplePath = "xsk-test-app/SamplePostgreXSClassicTable.hdbtable";
+//            const sampleContent = "table.schemaName = \"TEST_SCHEMA\"; table.temporary = true; table.tableType = COLUMNSTORE; table.loggingType = NOLOGGING; table.columns = [ {name = \"ID\"; sqlType = INTEGER; unique= false; length = 40; nullable = false; comment = \"hello\"; defaultValue = 20; precision = 2; scale = 15;}, {name = \"NAME\"; sqlType = VARCHAR; length = 20; nullable = false; }, {name = \"JOB\"; sqlType = VARCHAR; length = 20; nullable = false;}, {name = \"NUMBER\"; sqlType = INTEGER; length = 20; nullable = false; defaultValue = 444;}]; table.primaryKey.pkcolumns = [\"ID\"]; table.description = \"test table test\";";
+//            const sampleParsedData = facade.parseDataStructureModel(sampleName, samplePath, sampleContent);
+//            this.handleParsedData(sampleParsedData, project);
 
             if (!deployables.find(x => x.projectName === projectName)) {
                 deployables.push({
@@ -98,12 +113,42 @@ class MigrationService {
         this.handlePossibleDeployableArtifacts(deployables);
     }
 
+    handleParsedData(parsedData, project) {
+        if(parsedData === null) {
+            console.log("File could not be parsed, no synonym generated.");
+            return;
+        }
+
+        const dataModelType = parsedData.getClass().getName();
+        const hdbTableModel = "com.sap.xsk.hdb.ds.model.hdbtable.XSKDataStructureHDBTableModel";
+        const hdbViewModel = "com.sap.xsk.hdb.ds.model.hdbview.XSKDataStructureHDBViewModel";
+        const hdbTableTypeModel = "com.sap.xsk.hdb.ds.model.hdbtabletype.XSKDataStructureHDBTableTypeModel";
+        const hdbDDModel = "com.sap.xsk.hdb.ds.model.hdbdd.XSKDataStructureTypeDefinitionModel";
+
+        if(dataModelType == hdbTableModel) {
+            console.log("Creating synonym for hdbtable...");
+            this.createHdbSynonymFile(project, parsedData.getName(), getDefaultHanaUser() /* parsedData.getSchema() */);
+        }
+        else if(dataModelType == hdbViewModel) {
+            console.log("Creating synonym for hdbview...");
+        }
+        else if(dataModelType == hdbTableTypeModel) {
+            console.log("Creating synonym for hdbtable...");
+        }
+        else if(dataModelType == hdbDDModel) {
+            console.log("Creating synonym for hdbdd...");
+        }
+        else {
+            console.log("Unknown model, no synonym generated!");
+        }
+    }
+
     handlePossibleDeployableArtifacts(deployables) {
         for (const deployable of deployables) {
             if (deployable.artifacts && deployable.artifacts.length > 0) {
                 const hdiConfigPath = this.createHdiConfigFile(deployable.project);
                 this.createHdiFile(deployable.project, hdiConfigPath, deployable.artifacts);
-            }    
+            }
         }
     }
 
@@ -151,6 +196,26 @@ class MigrationService {
         hdiFile.setContent(hdiJsonBytes);
 
         return hdiPath;
+    }
+
+    createHdbSynonymFile(project, name, schemaName) {
+        // input name should be like: xsk-test-app::SamplePostgreXSClassicTable
+        const viewName = name.split(':').pop();
+        var hdbSynonym = {};
+        hdbSynonym[name] = {
+            "target" : {
+                "object" : viewName,
+                "schema" : schemaName
+            }
+        };
+
+        const hdbSynonymPath = `${viewName}.hdbsynonym`;
+        const hdbSynonymFile = project.createFile(`${viewName}.hdbsynonym`);
+        const hdbSynonymJson = JSON.stringify(hdbSynonym, null, 4);
+        const hdbSynonymJsonBytes = bytes.textToByteArray(hdbSynonymJson);
+        hdbSynonymFile.setContent(hdbSynonymJsonBytes);
+
+        return hdbSynonymPath;
     }
 
     getDefaultHanaUser() {
