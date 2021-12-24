@@ -77,14 +77,7 @@ class MigrationService {
             const filePath = file._packageName.replaceAll('.', "/") + "/" + fileName;
             const fileContent = String.fromCharCode.apply(String, file._content).replace(/\0/g,'');
             const parsedData = facade.parseDataStructureModel(fileName, filePath, fileContent);
-            this.handleParsedData(parsedData, project);
-
-//            // TODO: REMOVE THIS BLOCK!!!! ONLY FOR DEBUG!!! Call parsers for a hardcoded sample hdbtable file
-//            const sampleName = "SamplePostgreXSClassicTable.hdbtable";
-//            const samplePath = "xsk-test-app/SamplePostgreXSClassicTable.hdbtable";
-//            const sampleContent = "table.schemaName = \"TEST_SCHEMA\"; table.temporary = true; table.tableType = COLUMNSTORE; table.loggingType = NOLOGGING; table.columns = [ {name = \"ID\"; sqlType = INTEGER; unique= false; length = 40; nullable = false; comment = \"hello\"; defaultValue = 20; precision = 2; scale = 15;}, {name = \"NAME\"; sqlType = VARCHAR; length = 20; nullable = false; }, {name = \"JOB\"; sqlType = VARCHAR; length = 20; nullable = false;}, {name = \"NUMBER\"; sqlType = INTEGER; length = 20; nullable = false; defaultValue = 444;}]; table.primaryKey.pkcolumns = [\"ID\"]; table.description = \"test table test\";";
-//            const sampleParsedData = facade.parseDataStructureModel(sampleName, samplePath, sampleContent);
-//            this.handleParsedData(sampleParsedData, project);
+            const generatedSynonymFile = this.handleParsedData(parsedData, project);
 
             if (!deployables.find(x => x.projectName === projectName)) {
                 deployables.push({
@@ -108,6 +101,10 @@ class MigrationService {
                 || fileRunLocation.endsWith('calculationview')) {
                 deployables.find(x => x.projectName === projectName).artifacts.push(file.RunLocation);
             }
+
+            if(generatedSynonymFile !== null && generatedSynonymFile !== undefined) {
+                deployables.find(x => x.projectName === projectName).artifacts.push("/" + projectName + "/" + generatedSynonymFile);
+            }
         }
 
         this.handlePossibleDeployableArtifacts(deployables);
@@ -127,20 +124,23 @@ class MigrationService {
 
         if(dataModelType == hdbTableModel) {
             console.log("Creating synonym for hdbtable...");
-            this.createHdbSynonymFile(project, parsedData.getName(), getDefaultHanaUser() /* parsedData.getSchema() */);
+            return this.createHdbSynonymFile(project, parsedData.getName(), this.getDefaultHanaUser() /* parsedData.getSchema() */);
         }
         else if(dataModelType == hdbViewModel) {
             console.log("Creating synonym for hdbview...");
+            return;
         }
         else if(dataModelType == hdbTableTypeModel) {
             console.log("Creating synonym for hdbtable...");
+            return;
         }
         else if(dataModelType == hdbDDModel) {
             console.log("Creating synonym for hdbdd...");
+            return;
         }
-        else {
-            console.log("Unknown model, no synonym generated!");
-        }
+
+        console.log("File parsed, but no synonym generation required!");
+        return;
     }
 
     handlePossibleDeployableArtifacts(deployables) {
@@ -161,6 +161,10 @@ class MigrationService {
                 },
                 calculationview: {
                     plugin_name: "com.sap.hana.di.calculationview",
+                    plugin_version: "12.1.0"
+                },
+                hdbsynonym: {
+                    plugin_name: "com.sap.hana.di.synonym",
                     plugin_version: "12.1.0"
                 }
             }
