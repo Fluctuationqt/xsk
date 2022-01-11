@@ -101,7 +101,8 @@ public class XSKHDBModule extends AbstractDirigibleModule {
     parserServices.put(IXSKDataStructureModel.FILE_EXTENSION_HDBPROCEDURE, new XSKHDBProcedureParser());
     parserServices.put(IXSKDataStructureModel.FILE_EXTENSION_HDBSEQUENCE, new XSKHDBSequenceParser());
     parserServices.put(IXSKDataStructureModel.FILE_EXTENSION_HDBSCALARFUNCTION, new XSKHDBScalarFunctionParser());
-    parserServices.put(IXSKDataStructureModel.FILE_EXTENSION_STRUCTURE, new XSKTableTypeParser());
+    parserServices.put(IXSKDataStructureModel.FILE_EXTENSION_STRUCTURE, new XSKTableTypeParser()); // I.Y: Why was it like this?
+    parserServices.put(IXSKDataStructureModel.FILE_EXTENSION_HDB_TABLE_TYPE, new XSKTableTypeParser()); // I.Y: This was missing tabletypes were not parsed
 
     parserServices.put(IXSKDataStructureModel.TYPE_HDBDD, new XSKHdbddParser());
     parserServices.put(IXSKDataStructureModel.TYPE_HDB_TABLE, new XSKTableParser());

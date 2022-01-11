@@ -11,6 +11,7 @@
  */
 const HanaRepository = require('ide-migration/server/migration/repository/hana-repository');
 const workspaceManager = require("platform/v4/workspace");
+const repositoryManager = require("platform/v4/repository");
 const bytes = require("io/v4/bytes");
 const database = require("db/v4/database");
 const config = require("core/v4/configurations");
@@ -76,6 +77,14 @@ class MigrationService {
             const fileName = file._name + "." + file._suffix;
             const filePath = file._packageName.replaceAll('.', "/") + "/" + fileName;
             const fileContent = String.fromCharCode.apply(String, file._content).replace(/\0/g,'');
+
+            if(fileName.endsWith(".hdbdd")) {
+              console.log("IVO: Creating hdbdd duplicate in registry so that hdbdd parser can find them");
+              console.log("IVO:" + "/registry/public/" + filePath + "  file_content: " + fileContent);
+              // IVO: TODO: ADD HDBTI FILES HERE TOO FOR THE HDBDD PARSER IT NEEDS THEM?
+              // IVO: TODO: ALSO DELETE FILES LIKE THIS AFTER USE !!
+              repositoryManager.createResource("/registry/public/" + filePath, fileContent, 'text/plain');
+            }
             const parsedData = facade.parseDataStructureModel(fileName, filePath, fileContent);
             const generatedSynonymFile = this.handleParsedData(parsedData, project);
 
@@ -120,22 +129,22 @@ class MigrationService {
         const hdbTableModel = "com.sap.xsk.hdb.ds.model.hdbtable.XSKDataStructureHDBTableModel";
         const hdbViewModel = "com.sap.xsk.hdb.ds.model.hdbview.XSKDataStructureHDBViewModel";
         const hdbTableTypeModel = "com.sap.xsk.hdb.ds.model.hdbtabletype.XSKDataStructureHDBTableTypeModel";
-        const hdbDDModel = "com.sap.xsk.hdb.ds.model.hdbdd.XSKDataStructureTypeDefinitionModel";
+        const hdbDDModel = "com.sap.xsk.hdb.ds.model.hdbdd.XSKDataStructureCdsModel";
+
+        console.log("IVO: Attempting to create synonym for Model: " + dataModelType);
 
         if(dataModelType == hdbTableModel) {
-            console.log("Creating synonym for hdbtable...");
-            return this.createHdbSynonymFile(project, parsedData.getName(), this.getDefaultHanaUser() /* parsedData.getSchema() */);
+            return this.createHdbSynonymFile(project, parsedData.getName(), parsedData.getSchema());
         }
         else if(dataModelType == hdbViewModel) {
-            console.log("Creating synonym for hdbview...");
-            return;
+              return this.createHdbSynonymFile(project, parsedData.getName(), parsedData.getSchema());
         }
         else if(dataModelType == hdbTableTypeModel) {
-            console.log("Creating synonym for hdbtable...");
-            return;
+            return this.createHdbSynonymFile(project, parsedData.getName(), parsedData.getSchema());
         }
         else if(dataModelType == hdbDDModel) {
-            console.log("Creating synonym for hdbdd...");
+            // TODO: foreach item in parsedData.tableModels and parsedData.tableTypeModles
+            // TODO: generate a synonym file with the item's schema and name
             return;
         }
 
