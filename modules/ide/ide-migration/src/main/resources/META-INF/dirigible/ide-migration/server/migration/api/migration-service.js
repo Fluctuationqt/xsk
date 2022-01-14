@@ -78,15 +78,19 @@ class MigrationService {
             const filePath = file._packageName.replaceAll('.', "/") + "/" + fileName;
             const fileContent = String.fromCharCode.apply(String, file._content).replace(/\0/g,'');
 
-            if(fileName.endsWith(".hdbdd")) {
-              console.log("IVO: Creating hdbdd duplicate in registry so that hdbdd parser can find them");
-              console.log("IVO:" + "/registry/public/" + filePath + "  file_content: " + fileContent);
-              // IVO: TODO: ADD HDBTI FILES HERE TOO FOR THE HDBDD PARSER IT NEEDS THEM?
-              // IVO: TODO: ALSO DELETE FILES LIKE THIS AFTER USE !!
-              repositoryManager.createResource("/registry/public/" + filePath, fileContent, 'text/plain');
+            // Move artifacts required for hdbdd parser to /registry/public
+            if(fileName.endsWith(".hdbdd") || filename.endsWith(".hdbti")) {
+                repositoryManager.createResource("/registry/public/" + filePath, fileContent, 'text/plain');
             }
+
+            // Parse current artifacts and generate synonym files for it if necessary
             const parsedData = facade.parseDataStructureModel(fileName, filePath, fileContent);
-            const generatedSynonymFile = this.handleParsedData(parsedData, project);
+            const generatedSynonymFiles = this.handleParsedData(parsedData, project);
+
+            // Remove artifacts required for hdbdd parser from /registry/public
+            if(fileName.endsWith(".hdbdd") || filename.endsWith(".hdbti")) {
+                repositoryManager.deleteResource("/registry/public/" + filePath);
+            }
 
             if (!deployables.find(x => x.projectName === projectName)) {
                 deployables.push({
@@ -111,7 +115,7 @@ class MigrationService {
                 deployables.find(x => x.projectName === projectName).artifacts.push(file.RunLocation);
             }
 
-            if(generatedSynonymFile !== null && generatedSynonymFile !== undefined) {
+            for(const generatedSynonymFile of generatedSynonymFiles) {
                 deployables.find(x => x.projectName === projectName).artifacts.push("/" + projectName + "/" + generatedSynonymFile);
             }
         }
@@ -121,35 +125,31 @@ class MigrationService {
 
     handleParsedData(parsedData, project) {
         if(parsedData === null) {
-            console.log("File could not be parsed, no synonym generated.");
-            return;
+            return [];
         }
 
         const dataModelType = parsedData.getClass().getName();
-        const hdbTableModel = "com.sap.xsk.hdb.ds.model.hdbtable.XSKDataStructureHDBTableModel";
-        const hdbViewModel = "com.sap.xsk.hdb.ds.model.hdbview.XSKDataStructureHDBViewModel";
-        const hdbTableTypeModel = "com.sap.xsk.hdb.ds.model.hdbtabletype.XSKDataStructureHDBTableTypeModel";
         const hdbDDModel = "com.sap.xsk.hdb.ds.model.hdbdd.XSKDataStructureCdsModel";
 
-        console.log("IVO: Attempting to create synonym for Model: " + dataModelType);
+        var generatedSynonymFiles = [];
 
-        if(dataModelType == hdbTableModel) {
-            return this.createHdbSynonymFile(project, parsedData.getName(), parsedData.getSchema());
+        if(dataModelType == hdbDDModel) {
+            for(const item of parsedData.tableModels) {
+               this.createHdbPublicSynonymFile(project, item.getName());
+               generatedSynonymFiles.push(this.createHdbSynonymFile(project, item.getName(), item.getSchema()));
+            }
+
+            for(const item of parsedData.tableTypeModels) {
+               this.createHdbPublicSynonymFile(project, item.getName());
+               generatedSynonymFiles.push(this.createHdbSynonymFile(project, item.getName(), item.getSchema()));
+            }
         }
-        else if(dataModelType == hdbViewModel) {
-              return this.createHdbSynonymFile(project, parsedData.getName(), parsedData.getSchema());
-        }
-        else if(dataModelType == hdbTableTypeModel) {
-            return this.createHdbSynonymFile(project, parsedData.getName(), parsedData.getSchema());
-        }
-        else if(dataModelType == hdbDDModel) {
-            // TODO: foreach item in parsedData.tableModels and parsedData.tableTypeModles
-            // TODO: generate a synonym file with the item's schema and name
-            return;
+        else {
+            this.createHdbPublicSynonymFile(project, parsedData.getName());
+            generatedSynonymFiles.push(this.createHdbSynonymFile(project, parsedData.getName(), parsedData.getSchema()));
         }
 
-        console.log("File parsed, but no synonym generation required!");
-        return;
+        return generatedSynonymFiles;
     }
 
     handlePossibleDeployableArtifacts(deployables) {
@@ -223,7 +223,26 @@ class MigrationService {
         };
 
         const hdbSynonymPath = `${viewName}.hdbsynonym`;
-        const hdbSynonymFile = project.createFile(`${viewName}.hdbsynonym`);
+        const hdbSynonymFile = project.createFile(hdbSynonymPath);
+        const hdbSynonymJson = JSON.stringify(hdbSynonym, null, 4);
+        const hdbSynonymJsonBytes = bytes.textToByteArray(hdbSynonymJson);
+        hdbSynonymFile.setContent(hdbSynonymJsonBytes);
+
+        return hdbSynonymPath;
+    }
+
+    createHdbPublicSynonymFile(project, name) {
+        // input name should be like: xsk-test-app::SamplePostgreXSClassicTable
+        const viewName = name.split(':').pop();
+        var hdbSynonym = {};
+        hdbSynonym[name] = {
+            "target" : {
+                "object" : name,
+            }
+        };
+
+        const hdbSynonymPath = `${viewName}.hdbpublicsynonym`;
+        const hdbSynonymFile = project.createFile(hdbSynonymPath);
         const hdbSynonymJson = JSON.stringify(hdbSynonym, null, 4);
         const hdbSynonymJsonBytes = bytes.textToByteArray(hdbSynonymJson);
         hdbSynonymFile.setContent(hdbSynonymJsonBytes);
